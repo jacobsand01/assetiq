@@ -20,7 +20,7 @@
     ],
     "baseUrl": ".",              // 👈 add this line
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["src/*"] 
     }
   },
   "include": [

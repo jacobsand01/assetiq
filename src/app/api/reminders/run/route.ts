@@ -13,95 +13,128 @@ function isAuthorized(req: Request): boolean {
 }
 
 async function runReminderJob() {
-  // 1) Load all orgs with thresholds
-  const { data: orgs, error: orgErr } = await supabase
-    .from('organizations')
-    .select('id, threshold');
-
-  if (orgErr) throw orgErr;
-
+  const startedAt = new Date();
   let staleReminders = 0;
   let offboardingReminders = 0;
 
-  for (const org of orgs ?? []) {
-    const threshold = org.threshold ?? 30;
-    const now = new Date();
-    const cutoff = new Date(now.getTime() - threshold * 24 * 60 * 60 * 1000);
-    const cutoffIso = cutoff.toISOString();
+  try {
+    // 1) Load all orgs with thresholds
+    const { data: orgs, error: orgErr } = await supabase
+      .from('organizations')
+      .select('id, threshold');
 
-    // 2) Find stale devices: last_seen_at null OR older than threshold
-    const { data: staleDevices, error: staleErr } = await supabase
-      .from('devices')
-      .select('id, org_id, asset_tag, last_seen_at')
-      .eq('org_id', org.id)
-      .or(`last_seen_at.is.null,last_seen_at.lt.${cutoffIso}`);
+    if (orgErr) throw orgErr;
 
-    if (staleErr) throw staleErr;
+    for (const org of orgs ?? []) {
+      const threshold = org.threshold ?? 30;
+      const now = new Date();
+      const cutoff = new Date(now.getTime() - threshold * 24 * 60 * 60 * 1000);
+      const cutoffIso = cutoff.toISOString();
 
-    for (const d of staleDevices ?? []) {
-      const msg = `[MOCK EMAIL] [STALE] Device ${
-        d.asset_tag ?? d.id
-      } is stale (last seen ${d.last_seen_at ?? 'never'}).`;
-      console.log(msg);
+      // 2) Find stale devices: last_seen_at null OR older than threshold
+      const { data: staleDevices, error: staleErr } = await supabase
+        .from('devices')
+        .select('id, org_id, asset_tag, last_seen_at')
+        .eq('org_id', org.id)
+        .or(`last_seen_at.is.null,last_seen_at.lt.${cutoffIso}`);
 
-      await supabase.from('reminders').insert([
-        {
-          org_id: d.org_id,
-          device_id: d.id,
-          user_email: 'it@example.com', // TODO: later target real owner/manager
-          type: 'stale_device',
-          status: 'sent',
-          scheduled_for: now.toISOString(),
-          sent_at: now.toISOString(),
-        },
-      ]);
+      if (staleErr) throw staleErr;
 
-      staleReminders++;
-    }
+      for (const d of staleDevices ?? []) {
+        const msg = `[MOCK EMAIL] [STALE] Device ${
+          d.asset_tag ?? d.id
+        } is stale (last seen ${d.last_seen_at ?? 'never'}).`;
+        console.log(msg);
 
-    // 3) Open offboarding events with devices not returned
-    const { data: events, error: evErr } = await supabase
-      .from('offboarding_events')
-      .select('id, org_id, user_email, devices_returned, reminders_sent')
-      .eq('org_id', org.id)
-      .eq('status', 'open')
-      .eq('devices_returned', false);
+        await supabase.from('reminders').insert([
+          {
+            org_id: d.org_id,
+            device_id: d.id,
+            user_email: 'it@example.com', // TODO: later target real owner/manager
+            type: 'stale_device',
+            status: 'sent',
+            scheduled_for: now.toISOString(),
+            sent_at: now.toISOString(),
+          },
+        ]);
 
-    if (evErr) throw evErr;
+        staleReminders++;
+      }
 
-    for (const e of events ?? []) {
-      const msg = `[MOCK EMAIL] [OFFBOARDING] Reminder for ${e.user_email}.`;
-      console.log(msg);
-
-      await supabase
+      // 3) Open offboarding events with devices not returned
+      const { data: events, error: evErr } = await supabase
         .from('offboarding_events')
-        .update({
-          reminders_sent: (e.reminders_sent ?? 0) + 1,
-          notes: `Reminder sent at ${now.toISOString()}`,
-        })
-        .eq('id', e.id);
+        .select('id, org_id, user_email, devices_returned, reminders_sent')
+        .eq('org_id', org.id)
+        .eq('status', 'open')
+        .eq('devices_returned', false);
 
-      await supabase.from('reminders').insert([
+      if (evErr) throw evErr;
+
+      for (const e of events ?? []) {
+        const msg = `[MOCK EMAIL] [OFFBOARDING] Reminder for ${e.user_email}.`;
+        console.log(msg);
+
+        await supabase
+          .from('offboarding_events')
+          .update({
+            reminders_sent: (e.reminders_sent ?? 0) + 1,
+            notes: `Reminder sent at ${now.toISOString()}`,
+          })
+          .eq('id', e.id);
+
+        await supabase.from('reminders').insert([
+          {
+            org_id: e.org_id,
+            user_email: e.user_email,
+            type: 'offboarding_device',
+            status: 'sent',
+            scheduled_for: now.toISOString(),
+            sent_at: now.toISOString(),
+          },
+        ]);
+
+        offboardingReminders++;
+      }
+    }
+
+    // ✅ Log success in job_logs
+    await supabase.from('job_logs').insert([
+      {
+        type: 'reminder_job',
+        status: 'success',
+        count: staleReminders + offboardingReminders,
+        run_at: startedAt.toISOString(),
+        message: `Stale: ${staleReminders}, Offboarding: ${offboardingReminders}`,
+      },
+    ]);
+
+    return {
+      success: true,
+      staleReminders,
+      offboardingReminders,
+      total: staleReminders + offboardingReminders,
+    };
+  } catch (err: any) {
+    console.error('Reminder job error (core):', err);
+
+    // ❌ Log failure in job_logs
+    try {
+      await supabase.from('job_logs').insert([
         {
-          org_id: e.org_id,
-          user_email: e.user_email,
-          type: 'offboarding_device',
-          status: 'sent',
-          scheduled_for: now.toISOString(),
-          sent_at: now.toISOString(),
+          type: 'reminder_job',
+          status: 'error',
+          count: 0,
+          run_at: startedAt.toISOString(),
+          message: err?.message ?? 'Unknown error',
         },
       ]);
-
-      offboardingReminders++;
+    } catch (logErr) {
+      console.error('Failed to log job error:', logErr);
     }
-  }
 
-  return NextResponse.json({
-    success: true,
-    staleReminders,
-    offboardingReminders,
-    total: staleReminders + offboardingReminders,
-  });
+    throw err;
+  }
 }
 
 // Vercel Cron can call GET or POST; both reuse the same job.
@@ -112,7 +145,8 @@ export async function GET(req: Request) {
   }
 
   try {
-    return await runReminderJob();
+    const result = await runReminderJob();
+    return NextResponse.json(result);
   } catch (err: any) {
     console.error('Reminder job error (GET):', err);
     return NextResponse.json({ error: err.message }, { status: 500 });
@@ -125,7 +159,8 @@ export async function POST(req: Request) {
   }
 
   try {
-    return await runReminderJob();
+    const result = await runReminderJob();
+    return NextResponse.json(result);
   } catch (err: any) {
     console.error('Reminder job error (POST):', err);
     return NextResponse.json({ error: err.message }, { status: 500 });

@@ -1,14 +1,17 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 
-type DeviceInput = {
+// Shape we expect from the client
+type IncomingRow = {
+  org_id: string;
   asset_tag: string;
   serial_number?: string | null;
   model?: string | null;
   platform?: string | null;
   warranty_until?: string | null;
   status?: string | null;
-  org_id: string;
+  location?: string | null;
+  metadata?: Record<string, any> | null;
 };
 
 export async function POST(req: Request) {
@@ -22,52 +25,60 @@ export async function POST(req: Request) {
       );
     }
 
-    const devices: DeviceInput[] = body.map((d: any) => ({
-      asset_tag: String(d.asset_tag ?? '').trim(),
-      serial_number: d.serial_number ?? null,
-      model: d.model ?? null,
-      platform: (d.platform ?? 'other').toLowerCase(),
-      warranty_until: d.warranty_until ?? null,
-      status: d.status ?? 'active',
-      org_id: String(d.org_id),
-    }));
+    const incoming = body as IncomingRow[];
 
-    // Basic validation
-    if (devices.some((d) => !d.asset_tag || !d.org_id)) {
+    // Filter invalid rows + normalize
+    const cleaned = incoming
+      .filter((r) => r && r.org_id && r.asset_tag)
+      .map((r) => ({
+        org_id: r.org_id,
+        asset_tag: r.asset_tag.trim(),
+        serial_number: r.serial_number ?? null,
+        model: r.model ?? null,
+        platform: r.platform ?? 'other',
+        status: r.status ?? 'active',
+        warranty_until: r.warranty_until ?? null,
+        location: r.location ?? null,
+        metadata: r.metadata ?? null,
+      }));
+
+    if (cleaned.length === 0) {
       return NextResponse.json(
-        { error: 'Each device must have asset_tag and org_id.' },
+        { error: 'No valid rows with org_id + asset_tag.' },
         { status: 400 }
       );
     }
 
-    // IMPORTANT: matches the unique index (org_id, asset_tag)
+    // 🔑 De-duplicate by (org_id, asset_tag) to avoid the
+    // "ON CONFLICT DO UPDATE command cannot affect row a second time" error
+    const map = new Map<string, (typeof cleaned)[number]>();
+    for (const row of cleaned) {
+      map.set(`${row.org_id}::${row.asset_tag}`, row);
+    }
+    const deduped = Array.from(map.values());
+
     const { data, error } = await supabase
       .from('devices')
-      .upsert(devices, {
+      .upsert(deduped, {
         onConflict: 'org_id,asset_tag',
         ignoreDuplicates: false,
-      })
-      .select('*');
+      });
 
     if (error) {
-      console.error(error);
-      return NextResponse.json(
-        { error: error.message ?? 'Failed to upsert devices' },
-        { status: 500 }
-      );
+      console.error('Upsert error:', error);
+      return NextResponse.json({ error: error.message }, { status: 400 });
     }
-
-    const total = data?.length ?? 0;
 
     return NextResponse.json({
       success: true,
-      total,
-      message: `Upserted ${total} device${total === 1 ? '' : 's'}`,
+      rowsReceived: incoming.length,
+      rowsUpserted: deduped.length,
+      rowsReturned: data?.length ?? 0,
     });
   } catch (err: any) {
-    console.error('Upsert route error:', err);
+    console.error('Upsert handler exception:', err);
     return NextResponse.json(
-      { error: err.message ?? 'Unexpected error' },
+      { error: err?.message ?? 'Unexpected server error.' },
       { status: 500 }
     );
   }

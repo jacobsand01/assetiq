@@ -5,6 +5,24 @@ import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { QRCodeCanvas } from 'qrcode.react';
 
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+} from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+
 type Device = {
   id: string;
   org_id: string;
@@ -16,6 +34,7 @@ type Device = {
   last_seen_at: string | null;
   warranty_until: string | null;
   created_at: string | null;
+  location: string | null;
 };
 
 type Assignment = {
@@ -37,13 +56,7 @@ export default function DeviceDetailPage() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [baseUrl, setBaseUrl] = useState<string>('');
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      setBaseUrl(window.location.origin);
-    }
-  }, []);
+  const [assignUrl, setAssignUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!deviceId) return;
@@ -55,7 +68,7 @@ export default function DeviceDetailPage() {
       const { data: deviceData, error: deviceError } = await supabase
         .from('devices')
         .select(
-          'id, org_id, asset_tag, serial_number, model, platform, status, last_seen_at, warranty_until, created_at'
+          'id, org_id, asset_tag, serial_number, model, platform, status, last_seen_at, warranty_until, created_at, location'
         )
         .eq('id', deviceId)
         .maybeSingle();
@@ -90,6 +103,18 @@ export default function DeviceDetailPage() {
     load();
   }, [deviceId]);
 
+  // Build the QR /assign URL once we know origin + asset_tag
+  useEffect(() => {
+    if (device?.asset_tag && typeof window !== 'undefined') {
+      const url = `${window.location.origin}/assign?asset_tag=${encodeURIComponent(
+        device.asset_tag
+      )}`;
+      setAssignUrl(url);
+    } else {
+      setAssignUrl(null);
+    }
+  }, [device?.asset_tag]);
+
   function formatDateTime(value: string | null): string {
     if (!value) return '—';
     const d = new Date(value);
@@ -119,191 +144,261 @@ export default function DeviceDetailPage() {
 
   if (loading) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-slate-900 text-slate-100">
-        <p>Loading device...</p>
+      <main className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center font-sans">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle className="text-base">Loading device…</CardTitle>
+            <CardDescription className="text-sm text-slate-400">
+              Fetching device details and assignment history.
+            </CardDescription>
+          </CardHeader>
+        </Card>
       </main>
     );
   }
 
   if (error || !device) {
     return (
-      <main className="min-h-screen flex flex-col items-center justify-center bg-slate-900 text-slate-100">
-        <p className="mb-4">{error ?? 'Device not found.'}</p>
-        <button
-          onClick={() => router.push('/devices')}
-          className="rounded-md border border-slate-600 px-4 py-2 text-sm hover:bg-slate-800"
-        >
-          ← Back to Devices
-        </button>
+      <main className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center font-sans">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle className="text-base">Device not found</CardTitle>
+            <CardDescription className="text-sm text-slate-400">
+              {error ?? 'We could not find this device.'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => router.push('/devices')}
+            >
+              ← Back to devices
+            </Button>
+          </CardContent>
+        </Card>
       </main>
     );
   }
 
-  const qrValue = device.asset_tag
-    ? `${baseUrl}/assign?asset_tag=${device.asset_tag}`
-    : '';
+  const isAssigned = device.status === 'assigned';
 
   return (
-    <main className="min-h-screen bg-slate-900 text-slate-100">
-      <header className="border-b border-slate-700 px-6 py-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">
-            Device {device.asset_tag ?? '(no asset tag)'}
-          </h1>
-          <p className="text-sm text-slate-400">
-            {device.model ?? 'Unknown model'} · {formatPlatform(device.platform)}
-          </p>
-        </div>
+    <main className="min-h-screen bg-slate-950 text-slate-50 font-sans">
+      {/* Header */}
+          <div className="flex items-center gap-2">
+      <Badge className="capitalize">{device.status}</Badge>
 
-        <div className="flex gap-3">
-          <button
-            onClick={() => router.push(`/devices/${device.id}/assign`)}
-            className="rounded-md bg-indigo-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-600"
-          >
-            Assign
-          </button>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => router.push(`/devices/${device.id}/edit`)}
+      >
+        Edit details
+      </Button>
 
-          <button
-            onClick={() => router.push('/devices')}
-            className="rounded-md border border-slate-600 px-3 py-1.5 text-sm hover:bg-slate-800"
-          >
-            ← Back
-          </button>
-        </div>
-      </header>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => {
+          if (device.asset_tag) {
+            router.push(
+              `/assign?asset_tag=${encodeURIComponent(device.asset_tag)}`
+            );
+          } else {
+            router.push(`/devices/${device.id}/assign`);
+          }
+        }}
+      >
+        {isAssigned ? 'Reassign' : 'Assign'}
+      </Button>
+    </div>
 
-      <section className="p-6 space-y-6">
-        <div className="grid gap-4 md:grid-cols-2 bg-slate-800/70 border border-slate-700 rounded-xl p-4">
-          <div>
-            <h2 className="text-sm font-semibold text-slate-300 mb-2">
-              Device Info
-            </h2>
-            <dl className="space-y-1 text-sm">
-              <div className="flex justify-between">
-                <dt className="text-slate-400">Asset Tag</dt>
-                <dd className="font-medium">{device.asset_tag ?? '—'}</dd>
+
+      {/* Body */}
+      <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 md:py-8 space-y-6">
+        {/* Top grid: device info + status + QR */}
+        <section className="grid gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1.3fr)]">
+          {/* Device info */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Device details</CardTitle>
+              <CardDescription className="text-xs text-slate-400">
+                Core identifiers and hardware information.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div className="flex justify-between gap-4">
+                <span className="text-slate-400">Asset tag</span>
+                <span className="font-medium">{device.asset_tag ?? '—'}</span>
               </div>
-              <div className="flex justify-between">
-                <dt className="text-slate-400">Serial Number</dt>
-                <dd className="font-medium">{device.serial_number ?? '—'}</dd>
+              <div className="flex justify-between gap-4">
+                <span className="text-slate-400">Serial number</span>
+                <span className="font-medium">
+                  {device.serial_number ?? '—'}
+                </span>
               </div>
-              <div className="flex justify-between">
-                <dt className="text-slate-400">Model</dt>
-                <dd className="font-medium">{device.model ?? '—'}</dd>
+              <div className="flex justify-between gap-4">
+                <span className="text-slate-400">Model</span>
+                <span className="font-medium">{device.model ?? '—'}</span>
               </div>
-              <div className="flex justify-between">
-                <dt className="text-slate-400">Type</dt>
-                <dd className="font-medium">
+              <div className="flex justify-between gap-4">
+                <span className="text-slate-400">Platform</span>
+                <span className="font-medium">
                   {formatPlatform(device.platform)}
-                </dd>
+                </span>
               </div>
-            </dl>
-
-            {qrValue && (
-              <div className="flex flex-col items-center mt-6">
-                <QRCodeCanvas
-                  value={qrValue}
-                  size={140}
-                  bgColor="#0f172a"
-                  fgColor="#ffffff"
-                />
-                <p className="text-xs text-slate-400 mt-2">
-                  Scan to assign this device
-                </p>
+              <div className="flex justify-between gap-4">
+                <span className="text-slate-400">Location</span>
+                <span className="font-medium">
+                  {device.location ?? '—'}
+                </span>
               </div>
-            )}
-          </div>
+            </CardContent>
+          </Card>
 
-          <div>
-            <h2 className="text-sm font-semibold text-slate-300 mb-2">
-              Status &amp; Lifecycle
-            </h2>
-            <dl className="space-y-1 text-sm">
-              <div className="flex justify-between">
-                <dt className="text-slate-400">Status</dt>
-                <dd>
-                  <span className="inline-flex items-center rounded-full bg-slate-800 px-2 py-0.5 text-xs capitalize">
-                    {device.status}
+          {/* Status + lifecycle + QR */}
+          <div className="space-y-4">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm">Status & lifecycle</CardTitle>
+                <CardDescription className="text-xs text-slate-400">
+                  High-level health for this device.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <div className="flex justify-between items-center gap-4">
+                  <span className="text-slate-400">Status</span>
+                  <Badge className="capitalize">{device.status}</Badge>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <span className="text-slate-400">Last seen</span>
+                  <span className="font-medium">
+                    {formatDateTime(device.last_seen_at)}
                   </span>
-                </dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-slate-400">Last Seen</dt>
-                <dd className="font-medium">
-                  {formatDateTime(device.last_seen_at)}
-                </dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-slate-400">Warranty Until</dt>
-                <dd className="font-medium">
-                  {formatDate(device.warranty_until)}
-                </dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-slate-400">Created</dt>
-                <dd className="font-medium">
-                  {formatDateTime(device.created_at)}
-                </dd>
-              </div>
-            </dl>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <span className="text-slate-400">Warranty until</span>
+                  <span className="font-medium">
+                    {formatDate(device.warranty_until)}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <span className="text-slate-400">Created</span>
+                  <span className="font-medium">
+                    {formatDateTime(device.created_at)}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm">QR quick-assign</CardTitle>
+                <CardDescription className="text-xs text-slate-400">
+                  Scan to open the assignment flow for this asset.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex items-center justify-center py-4">
+                {assignUrl ? (
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="rounded-2xl bg-white p-3">
+                      <QRCodeCanvas value={assignUrl} size={120} />
+                    </div>
+                    <p className="text-[11px] text-slate-400 break-all text-center">
+                      {assignUrl}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400 text-center">
+                    Add an asset tag to this device to generate a QR code.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
           </div>
-        </div>
+        </section>
 
         {/* Assignment history */}
-        <div className="bg-slate-800/70 border border-slate-700 rounded-xl p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-slate-300">
-              Assignment History
-            </h2>
-            {assignments.length > 0 && (
-              <span className="text-xs text-slate-400">
+        <section className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm md:text-base font-semibold text-slate-100">
+                Assignment history
+              </h2>
+              <Badge variant="outline">
                 {assignments.length} record
                 {assignments.length === 1 ? '' : 's'}
-              </span>
-            )}
+              </Badge>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs text-slate-300 hover:text-slate-50"
+              onClick={() => {
+                if (device.asset_tag) {
+                  router.push(
+                    `/assign?asset_tag=${encodeURIComponent(device.asset_tag)}`
+                  );
+                } else {
+                  router.push(`/devices/${device.id}/assign`);
+                }
+              }}
+            >
+              {isAssigned ? 'Reassign device' : 'Assign device'}
+            </Button>
           </div>
 
-          {assignments.length === 0 ? (
-            <p className="text-sm text-slate-400">
-              No assignment history yet for this device.
-            </p>
-          ) : (
-            <div className="overflow-x-auto rounded-md border border-slate-700">
-              <table className="min-w-full text-sm">
-                <thead className="bg-slate-900 border-b border-slate-700">
-                  <tr>
-                    <th className="px-3 py-2 text-left">Assignee</th>
-                    <th className="px-3 py-2 text-left">Email</th>
-                    <th className="px-3 py-2 text-left">Assigned At</th>
-                    <th className="px-3 py-2 text-left">Returned At</th>
-                    <th className="px-3 py-2 text-left">Notes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {assignments.map((a) => (
-                    <tr
-                      key={a.id}
-                      className="border-t border-slate-800 hover:bg-slate-900/70"
-                    >
-                      <td className="px-3 py-2">{a.assignee_name ?? '—'}</td>
-                      <td className="px-3 py-2">{a.assignee_email ?? '—'}</td>
-                      <td className="px-3 py-2">
-                        {formatDateTime(a.assigned_at)}
-                      </td>
-                      <td className="px-3 py-2">
-                        {formatDateTime(a.returned_at)}
-                      </td>
-                      <td className="px-3 py-2 max-w-xs truncate">
-                        {a.notes ?? '—'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </section>
+          <Card className="overflow-hidden">
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Assignee</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Assigned at</TableHead>
+                      <TableHead>Returned at</TableHead>
+                      <TableHead>Notes</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {assignments.length === 0 ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={5}
+                          className="py-8 text-center text-sm text-slate-400"
+                        >
+                          No assignment history yet for this device.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      assignments.map((a) => (
+                        <TableRow
+                          key={a.id}
+                          className="border-slate-800 hover:bg-slate-800/80 transition-colors"
+                        >
+                          <TableCell>{a.assignee_name ?? '—'}</TableCell>
+                          <TableCell>{a.assignee_email ?? '—'}</TableCell>
+                          <TableCell>
+                            {formatDateTime(a.assigned_at)}
+                          </TableCell>
+                          <TableCell>
+                            {formatDateTime(a.returned_at)}
+                          </TableCell>
+                          <TableCell className="max-w-xs truncate">
+                            {a.notes ?? '—'}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+      </div>
     </main>
   );
 }
