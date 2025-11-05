@@ -38,10 +38,12 @@ export default function ImportDevicesPage() {
         setCsvData(data);
         setStep('preview');
       },
-      error: (err: Papa.ParseError) => {
-        console.error(err);
-        setError('Failed to parse CSV file.');
-      },
+      error: (error: Error) => {
+  console.error(error);
+  setError('Failed to parse CSV file.');
+},
+
+
     });
   };
 
