@@ -64,16 +64,15 @@ export default function DevicesPage() {
     loadProfile();
   }, [router]);
 
-  useEffect(() => {
+    useEffect(() => {
     if (!profile) return;
 
-    async function loadDevices() {
+    async function loadDevices(orgId: string) {
       setLoadingPage(true);
       setError(null);
 
       const from = (page - 1) * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
-      const orgId = profile.org_id;
 
       const { data, error, count } = await supabase
         .from('devices')
@@ -98,8 +97,9 @@ export default function DevicesPage() {
       setLoadingPage(false);
     }
 
-    loadDevices();
+    loadDevices(profile.org_id);
   }, [profile, page]);
+
 
   const totalPages =
     totalCount !== null ? Math.max(1, Math.ceil(totalCount / PAGE_SIZE)) : 1;
