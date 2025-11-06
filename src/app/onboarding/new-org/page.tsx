@@ -144,9 +144,11 @@ export default function NewOrgOnboardingPage() {
   if (loading || checkingExisting) {
     return (
       <main className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center font-sans">
-        <Card className="w-full max-w-md">
+        <Card className="w-full max-w-md rounded-2xl border-slate-800 bg-slate-900/80 shadow-sm">
           <CardHeader>
-            <CardTitle className="text-base">Loading your workspace…</CardTitle>
+            <CardTitle className="text-base">
+              Loading your workspace…
+            </CardTitle>
             <CardDescription className="text-sm text-slate-400">
               Checking your account and existing organizations.
             </CardDescription>
@@ -162,15 +164,21 @@ export default function NewOrgOnboardingPage() {
       <header className="border-b border-slate-800 bg-slate-950/80 backdrop-blur">
         <div className="mx-auto max-w-3xl px-4 sm:px-6 py-4 flex items-center justify-between gap-3">
           <div className="flex flex-col gap-1">
-            <span className="text-xs font-semibold tracking-wide text-slate-300">
-              Welcome to AssetIQ
+            <span className="text-xs font-medium tracking-wide text-slate-400 uppercase">
+              AssetIQ
             </span>
+            <h1 className="text-lg md:text-xl font-semibold text-slate-50">
+              Welcome, let&apos;s set up your workspace
+            </h1>
             <p className="text-[11px] text-slate-500">
-              Let&apos;s set up your first workspace so you can get out of
-              spreadsheet hell.
+              We&apos;ll use this to tie devices, reminders, and offboarding
+              together in one place.
             </p>
           </div>
-          <Badge variant="outline" className="text-[11px]">
+          <Badge
+            variant="outline"
+            className="text-[11px] border-slate-700 bg-slate-900/60 text-slate-100"
+          >
             Onboarding
           </Badge>
         </div>
@@ -178,7 +186,7 @@ export default function NewOrgOnboardingPage() {
 
       {/* Body */}
       <div className="mx-auto max-w-3xl px-4 sm:px-6 py-6 md:py-8">
-        <Card>
+        <Card className="rounded-2xl border-slate-800 bg-slate-900/80 shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm">Create your workspace</CardTitle>
             <CardDescription className="text-xs text-slate-400">
@@ -269,7 +277,7 @@ export default function NewOrgOnboardingPage() {
                   type="submit"
                   size="sm"
                   disabled={submitting}
-                  className="bg-[#3578E5] hover:bg-[#2861bc]"
+                  className="bg-[#3578E5] hover:bg-[#2861bc] rounded-xl"
                 >
                   {submitting ? 'Creating workspace…' : 'Create workspace'}
                 </Button>

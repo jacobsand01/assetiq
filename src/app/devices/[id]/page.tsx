@@ -183,41 +183,61 @@ export default function DeviceDetailPage() {
 
   const isAssigned = device.status === 'assigned';
 
-  return (
+    return (
     <main className="min-h-screen bg-slate-950 text-slate-50 font-sans">
       {/* Header */}
+      <header className="border-b border-slate-800 bg-slate-950/80 backdrop-blur">
+        <div className="mx-auto max-w-5xl px-4 sm:px-6 py-4 flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <button
+              onClick={() => router.push('/devices')}
+              className="inline-flex items-center text-[11px] text-slate-400 hover:text-slate-200 transition-colors"
+            >
+              ← Back to devices
+            </button>
+            <h1 className="text-xl md:text-2xl font-semibold text-slate-50">
+              {device.asset_tag ?? 'Device details'}
+            </h1>
+            <p className="text-xs text-slate-400">
+              View details and assignment history for this device.
+            </p>
+          </div>
+
           <div className="flex items-center gap-2">
-      <Badge className="capitalize">{device.status}</Badge>
+            <Badge className="capitalize">{device.status}</Badge>
 
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={() => router.push(`/devices/${device.id}/edit`)}
-      >
-        Edit details
-      </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => router.push(`/devices/${device.id}/edit`)}
+            >
+              Edit details
+            </Button>
 
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={() => {
-          if (device.asset_tag) {
-            router.push(
-              `/assign?asset_tag=${encodeURIComponent(device.asset_tag)}`
-            );
-          } else {
-            router.push(`/devices/${device.id}/assign`);
-          }
-        }}
-      >
-        {isAssigned ? 'Reassign' : 'Assign'}
-      </Button>
-    </div>
-
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                if (device.asset_tag) {
+                  router.push(
+                    `/assign?asset_tag=${encodeURIComponent(
+                      device.asset_tag
+                    )}`
+                  );
+                } else {
+                  router.push(`/devices/${device.id}/assign`);
+                }
+              }}
+            >
+              {isAssigned ? 'Reassign' : 'Assign'}
+            </Button>
+          </div>
+        </div>
+      </header>
 
       {/* Body */}
       <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 md:py-8 space-y-6">
-        {/* Top grid: device info + status + QR */}
+{/* Top grid: device info + status + QR */}
         <section className="grid gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1.3fr)]">
           {/* Device info */}
           <Card>

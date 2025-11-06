@@ -4,6 +4,7 @@
 @tailwind components;
 @tailwind utilities;
 
+
 /* Global layout + typography */
 
 :root {
@@ -35,3 +36,59 @@ h6,
 p {
   margin: 0;
 }
+
+@keyframes app-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+body {
+  animation: app-fade-in 0.2s ease-out;
+}
+
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ... your existing styles ... */
+
+@layer base {
+  body {
+    @apply text-sm text-slate-200;
+  }
+
+  h1 {
+    @apply text-2xl md:text-3xl font-semibold text-slate-50;
+  }
+
+  h2 {
+    @apply text-lg md:text-xl font-semibold text-slate-50;
+  }
+
+  h3 {
+    @apply text-base md:text-lg font-semibold text-slate-50;
+  }
+
+  p {
+    @apply text-sm text-slate-300;
+  }
+
+  small {
+    @apply text-xs text-slate-500;
+  }
+}
+
+
+@layer components {
+  .clickable-row {
+    @apply cursor-pointer hover:bg-slate-800/80 transition-colors;
+  }
+}
+

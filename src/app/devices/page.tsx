@@ -301,35 +301,40 @@ export default function DevicesPage() {
     <main className="min-h-screen bg-slate-950 text-slate-50 font-sans">
       {/* Top bar */}
       <header className="border-b border-slate-800 bg-slate-950/80 backdrop-blur">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 py-4 flex items-center justify-between gap-3">
-          <div className="flex flex-col gap-1">
-            <span className="text-xs font-medium uppercase tracking-wide text-slate-400">
-              AssetIQ
-            </span>
-            <h1 className="text-xl md:text-2xl font-semibold text-slate-50">
-              Devices
-            </h1>
-            <p className="text-xs text-slate-400">
-              All hardware registered to your organization.
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              className="border-slate-700 bg-slate-900/60 text-slate-100 hover:bg-slate-800 hover:border-slate-600 rounded-xl text-xs md:text-sm transition-colors"
-              onClick={() => router.push('/devices/import')}
-            >
-              Import CSV
-            </Button>
-            <Button
-              className="bg-[#3578E5] hover:bg-[#2861bc] text-white rounded-xl text-xs md:text-sm px-3 py-2 transition-colors"
-              onClick={() => router.push('/devices/new')}
-            >
-              + Add device
-            </Button>
-          </div>
-        </div>
-      </header>
+  <div className="mx-auto max-w-6xl px-4 sm:px-6 py-4 flex items-center justify-between gap-3">
+    <div className="flex flex-col gap-1">
+      <button
+        onClick={() => router.push('/dashboard')}
+        className="inline-flex items-center text-[11px] text-slate-400 hover:text-slate-200 transition-colors"
+      >
+        ← Back to dashboard
+      </button>
+      <h1 className="text-xl md:text-2xl font-semibold text-slate-50">
+        Devices
+      </h1>
+      <p className="text-xs text-slate-400">
+        All hardware registered to your organization.
+      </p>
+    </div>
+
+    <div className="flex items-center gap-3">
+      <Button
+        variant="outline"
+        className="border-slate-700 bg-slate-900/60 text-slate-100 hover:bg-slate-800 hover:border-slate-600 rounded-xl text-xs md:text-sm transition-colors"
+        onClick={() => router.push('/devices/import')}
+      >
+        Import CSV
+      </Button>
+      <Button
+        className="bg-[#3578E5] hover:bg-[#2861bc] text-white rounded-xl text-xs md:text-sm px-3 py-2 transition-colors"
+        onClick={() => router.push('/devices/new')}
+      >
+        + Add device
+      </Button>
+    </div>
+  </div>
+</header>
+
 
       <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 md:py-8 space-y-6 md:space-y-8">
         {/* Stat cards */}
@@ -483,19 +488,20 @@ export default function DevicesPage() {
                     ) : (
                       sortedDevices.map((d) => (
                         <TableRow
-                          key={d.id}
-                          className="cursor-pointer border-slate-800 hover:bg-slate-800/80 transition-colors"
-                          onClick={() => router.push(`/devices/${d.id}`)}
-                        >
-                          {visibleCols.map((col) => (
-                            <TableCell
-                              key={`${d.id}-${col.key}`}
-                              className="text-sm text-slate-200"
-                            >
-                              {renderCell(col.key, d)}
-                            </TableCell>
-                          ))}
-                        </TableRow>
+  key={d.id}
+  className="clickable-row"
+  onClick={() => router.push(`/devices/${d.id}`)}
+>
+  {visibleCols.map((col) => (
+    <TableCell
+      key={`${d.id}-${col.key}`}
+      className="text-sm text-slate-200"
+    >
+      {renderCell(col.key, d)}
+    </TableCell>
+  ))}
+</TableRow>
+
                       ))
                     )}
                   </TableBody>

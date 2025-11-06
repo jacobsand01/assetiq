@@ -138,102 +138,167 @@ export default function AssignPage() {
   }
 
   async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setSuccess(false);
+  e.preventDefault();
+  setError(null);
+  setSuccess(false);
 
-    if (!device || !profile) {
-      setError('No device or organization found for this assignment.');
-      return;
-    }
-
-    // Basic validation: require something depending on mode
-    if (mode === 'person' && (!assigneeName || !assigneeEmail)) {
-      setError(
-        'Please provide both assignee name and email, or switch mode to "Location only".'
-      );
-      return;
-    }
-
-    if (mode === 'location' && !location) {
-      setError('Please provide a location, or switch mode to "Person".');
-      return;
-    }
-
-    if (mode === 'both' && (!assigneeName || !assigneeEmail || !location)) {
-      setError(
-        'For "Person + location", please fill in both the person fields and a location.'
-      );
-      return;
-    }
-
-    setSubmitting(true);
-
-    try {
-      const updates: Partial<Device> = {};
-
-      // Status logic
-      if (mode === 'person' || mode === 'both') {
-        updates.status = 'assigned';
-      } else if (mode === 'location') {
-        // Device is placed somewhere but not tied to a person
-        if (device.status === 'assigned') {
-          updates.status = 'active';
-        }
-      }
-
-      // Location logic
-      if (mode === 'location' || mode === 'both') {
-        updates.location = location || null;
-      }
-
-      // 1) If assigning to a person, insert into device_assignments
-      if (mode === 'person' || mode === 'both') {
-        const { error: assignError } = await supabase
-          .from('device_assignments')
-          .insert([
-            {
-              org_id: device.org_id,
-              device_id: device.id,
-              assignee_name: assigneeName,
-              assignee_email: assigneeEmail,
-              assigned_at: new Date().toISOString(),
-              returned_at: null,
-              notes:
-                mode === 'both' && location
-                  ? `Assigned with location: ${location}`
-                  : null,
-            },
-          ]);
-
-        if (assignError) {
-          console.error('Assignment insert error:', assignError);
-          throw assignError;
-        }
-      }
-
-      // 2) Update device row if we have any changes
-      if (Object.keys(updates).length > 0) {
-        const { error: updateError } = await supabase
-          .from('devices')
-          .update(updates)
-          .eq('id', device.id);
-
-        if (updateError) {
-          console.error('Device update error:', updateError);
-          throw updateError;
-        }
-      }
-
-      setSuccess(true);
-      setTimeout(() => router.push(`/devices/${device.id}`), 1200);
-    } catch (err: any) {
-      console.error(err);
-      setError(err.message ?? 'Failed to save assignment.');
-    } finally {
-      setSubmitting(false);
-    }
+  if (!device || !profile) {
+    setError('No device or organization found for this assignment.');
+    return;
   }
+
+  // Basic validation: require something depending on mode
+  if (mode === 'person' && (!assigneeName || !assigneeEmail)) {
+    setError(
+      'Please provide both assignee name and email, or switch mode to "Location only".'
+    );
+    return;
+  }
+
+  if (mode === 'location' && !location) {
+    setError('Please provide a location, or switch mode to "Person".');
+    return;
+  }
+
+  if (mode === 'both' && (!assigneeName || !assigneeEmail || !location)) {
+    setError(
+      'For "Person + location", please fill in both the person fields and a location.'
+    );
+    return;
+  }
+
+  setSubmitting(true);
+
+  try {
+    const updates: Partial<Device> = {};
+    const nowIso = new Date().toISOString();
+
+    // 0) Close any existing active assignment for this device
+    const { data: currentRows, error: currentError } = await supabase
+      .from('device_assignments')
+      .select('id, device_id, returned_at')
+      .eq('device_id', device.id)
+      .is('returned_at', null)
+      .limit(1);
+
+    if (currentError) {
+      console.error('Failed to load current assignment:', currentError);
+      setError('Failed to load current assignment.');
+      return;
+    }
+
+    const current = currentRows?.[0] ?? null;
+
+    if (current) {
+      const { error: closeError } = await supabase
+        .from('device_assignments')
+        .update({ returned_at: nowIso })
+        .eq('id', current.id);
+
+      if (closeError) {
+        console.error('Failed to close existing assignment:', closeError);
+        setError('Failed to update existing assignment.');
+        return;
+      }
+    }
+
+    // Status logic
+    if (mode === 'person' || mode === 'both') {
+      updates.status = 'assigned';
+    } else if (mode === 'location') {
+      // Device is placed somewhere but not tied to a person
+      if (device.status === 'assigned') {
+        updates.status = 'active';
+      }
+    }
+
+    // Location logic
+    if (mode === 'location' || mode === 'both') {
+      updates.location = location || null;
+    }
+
+    // Common fields for any assignment history row
+    const baseAssignment = {
+      org_id: device.org_id, // ✅ include org_id for multi-tenant safety
+      device_id: device.id,
+      assigned_at: nowIso,
+      returned_at: null,
+    };
+
+    // 1) If assigning to a person, insert into device_assignments
+    if (mode === 'person' || mode === 'both') {
+      const { error: assignError } = await supabase
+        .from('device_assignments')
+        .insert([
+          {
+            ...baseAssignment,
+            assignee_name: assigneeName,
+            assignee_email: assigneeEmail,
+            notes:
+              mode === 'both' && location
+                ? `Assigned with location: ${location}`
+                : null,
+          },
+        ]);
+
+      if (assignError) {
+        console.error('Assignment insert error (person):', assignError);
+        setError(assignError.message ?? 'Failed to save assignment.');
+        return;
+      }
+    }
+
+    // 2) If assigning only to a location, also log a history row
+    if (mode === 'location' && location) {
+      const { error: locationAssignError } = await supabase
+        .from('device_assignments')
+        .insert([
+          {
+            ...baseAssignment,
+            assignee_name: location, // stored so it shows up in history
+            assignee_email: null,
+            notes: 'Location assignment',
+          },
+        ]);
+
+      if (locationAssignError) {
+        console.error(
+          'Assignment insert error (location-only):',
+          locationAssignError
+        );
+        setError(locationAssignError.message ?? 'Failed to save assignment.');
+        return;
+      }
+    }
+
+    // 3) Update device row if we have any changes
+    if (Object.keys(updates).length > 0) {
+      const { error: updateError } = await supabase
+        .from('devices')
+        .update(updates)
+        .eq('id', device.id);
+
+      if (updateError) {
+        console.error('Device update error:', updateError);
+        setError(updateError.message ?? 'Failed to update device.');
+        return;
+      }
+    }
+
+    setSuccess(true);
+    setTimeout(() => router.push(`/devices/${device.id}`), 1200);
+  } catch (err: any) {
+    console.error('handleSubmit error:', err);
+    if (err && typeof err === 'object' && 'message' in err) {
+      setError((err as any).message ?? 'Failed to save assignment.');
+    } else {
+      setError('Failed to save assignment.');
+    }
+  } finally {
+    setSubmitting(false);
+  }
+}
+
 
   const label = device
     ? device.asset_tag ?? assetTagFromUrl ?? 'Device'

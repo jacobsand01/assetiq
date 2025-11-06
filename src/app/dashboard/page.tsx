@@ -212,6 +212,16 @@ export default function DashboardPage() {
             </h1>
           </div>
           <div className="flex items-center gap-2">
+
+            <Button
+             variant="outline"
+             className="hidden sm:inline-flex border-slate-700 bg-slate-900/60 text-slate-100 hover:bg-slate-800 hover:border-slate-600 rounded-xl text-xs md:text-sm transition-colors"
+             onClick={() => router.push('/integrations')}
+            >
+            Integrations
+            </Button>
+
+
             <Button
               variant="outline"
               className="hidden sm:inline-flex border-slate-700 bg-slate-900/60 text-slate-100 hover:bg-slate-800 hover:border-slate-600 rounded-xl text-xs md:text-sm transition-colors"

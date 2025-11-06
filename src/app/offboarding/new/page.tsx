@@ -20,6 +20,8 @@ type Profile = {
   full_name: string | null;
 };
 
+type ReminderPlan = 'default' | 'none';
+
 export default function NewOffboardingPage() {
   const router = useRouter();
 
@@ -30,6 +32,9 @@ export default function NewOffboardingPage() {
   const [managerEmail, setManagerEmail] = useState('');
   const [devicesExpected, setDevicesExpected] = useState('');
   const [notes, setNotes] = useState('');
+
+  const [dueDate, setDueDate] = useState(''); // yyyy-mm-dd from <input type="date" />
+  const [reminderPlan, setReminderPlan] = useState<ReminderPlan>('default');
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -51,14 +56,14 @@ export default function NewOffboardingPage() {
         return;
       }
 
-      const { data, error } = await supabase
+      const { data, error: profileError } = await supabase
         .from('profiles')
         .select('id, org_id, full_name')
         .eq('id', user.id)
-        .maybeSingle();
+        .maybeSingle<Profile>();
 
-      if (error || !data) {
-        console.error(error);
+      if (profileError || !data) {
+        console.error('Profile load error:', profileError);
         router.replace('/onboarding/new-org');
         return;
       }
@@ -71,69 +76,71 @@ export default function NewOffboardingPage() {
   }, [router]);
 
   async function handleSubmit(e: FormEvent) {
-  e.preventDefault();
-  setError(null);
-  setSuccess(false);
+    e.preventDefault();
+    setError(null);
+    setSuccess(false);
 
-  if (!profile) {
-    setError('No organization found for your account.');
-    return;
-  }
-
-  setSubmitting(true);
-
-  try {
-    // For now, store manager + expected devices inside notes
-    // so we avoid any schema mismatch on those columns.
-    const combinedNotesParts = [
-      notes?.trim() || '',
-      managerEmail
-        ? `Manager: ${managerEmail.trim()}`
-        : '',
-      devicesExpected
-        ? `Devices expected:\n${devicesExpected.trim()}`
-        : '',
-    ].filter(Boolean);
-
-    const combinedNotes =
-      combinedNotesParts.length > 0
-        ? combinedNotesParts.join('\n\n')
-        : null;
-
-    const { error: insertError } = await supabase
-      .from('offboarding_events')
-      .insert([
-        {
-          org_id: profile.org_id,
-          user_email: leaverEmail,
-          user_name: leaverName,
-          status: 'open',
-          // we only set notes for now to avoid any column/type issues
-          notes: combinedNotes,
-          // If your table *does* have these columns, Postgres will use defaults:
-          // devices_returned, reminders_sent, created_at, etc.
-        },
-      ]);
-
-    if (insertError) {
-      console.error('Offboarding insert error:', insertError);
-      throw new Error(insertError.message ?? 'Failed to create offboarding event in Supabase.');
+    if (!profile) {
+      setError('No organization found for your account.');
+      return;
     }
 
-    setSuccess(true);
+    if (!leaverName.trim() || !leaverEmail.trim()) {
+      setError('Please fill in the leaver’s name and email.');
+      return;
+    }
 
-    // After a short success state, take them to the offboarding list
-    setTimeout(() => {
-      router.push('/offboarding');
-    }, 1200);
-  } catch (err: any) {
-    console.error('Offboarding create exception:', err);
-    setError(err.message ?? 'Failed to create offboarding event');
-  } finally {
-    setSubmitting(false);
+    if (!dueDate) {
+      setError('Please choose when the devices are due back.');
+      return;
+    }
+
+    setSubmitting(true);
+
+    try {
+      // Turn yyyy-mm-dd into a Date for next_reminder_at (midnight UTC)
+      const dueDateIso = new Date(`${dueDate}T00:00:00Z`).toISOString();
+
+      const { error: insertError } = await supabase
+        .from('offboarding_events')
+        .insert([
+          {
+            org_id: profile.org_id,
+            user_email: leaverEmail.trim(),
+            user_name: leaverName.trim(),
+            status: 'open',
+
+            manager_email: managerEmail.trim() || null,
+            devices_expected: devicesExpected.trim() || null,
+            devices_due_date: dueDate, // date column
+            reminder_plan: reminderPlan, // 'default' or 'none'
+            next_reminder_at:
+              reminderPlan === 'default' ? dueDateIso : null, // first email on due date
+
+            notes: notes.trim() || null,
+          },
+        ]);
+
+      if (insertError) {
+        console.error('Offboarding insert error:', insertError);
+        throw new Error(
+          insertError.message ??
+            'Failed to create offboarding event in Supabase.'
+        );
+      }
+
+      setSuccess(true);
+
+      setTimeout(() => {
+        router.push('/offboarding');
+      }, 1200);
+    } catch (err: any) {
+      console.error('Offboarding create exception:', err);
+      setError(err?.message ?? 'Failed to create offboarding event');
+    } finally {
+      setSubmitting(false);
+    }
   }
-}
-
 
   if (loading) {
     return (
@@ -182,8 +189,8 @@ export default function NewOffboardingPage() {
           <CardHeader className="pb-3">
             <CardTitle className="text-sm">Leaver details</CardTitle>
             <CardDescription className="text-xs text-slate-400">
-              Create an offboarding record so AssetIQ can nag managers until
-              all devices are back.
+              Create an offboarding record so AssetIQ can nag managers until all
+              devices are back.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -234,8 +241,61 @@ export default function NewOffboardingPage() {
                   className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#3578E5]"
                 />
                 <p className="text-[11px] text-slate-500">
-                  We&apos;ll use this later for escalations when devices
-                  don&apos;t come back.
+                  We&apos;ll use this later for escalations when devices don&apos;t
+                  come back.
+                </p>
+              </div>
+
+              {/* Devices due back */}
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-slate-300">
+                  Devices due back by
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#3578E5]"
+                />
+                <p className="text-[11px] text-slate-500">
+                  We&apos;ll use this to drive reminder emails and overdue
+                  reporting.
+                </p>
+              </div>
+
+              {/* Reminder behavior */}
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-slate-300">
+                  Reminder emails
+                </label>
+                <div className="flex flex-wrap gap-2 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => setReminderPlan('default')}
+                    className={`rounded-full px-3 py-1 border transition-colors ${
+                      reminderPlan === 'default'
+                        ? 'border-[#3578E5] bg-[#3578E5]/20 text-[#d2e3ff]'
+                        : 'border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800'
+                    }`}
+                  >
+                    Default: email leaver &amp; manager
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReminderPlan('none')}
+                    className={`rounded-full px-3 py-1 border transition-colors ${
+                      reminderPlan === 'none'
+                        ? 'border-[#3578E5] bg-[#3578E5]/20 text-[#d2e3ff]'
+                        : 'border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800'
+                    }`}
+                  >
+                    No automatic reminders
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  In a later phase, AssetIQ will email the leaver and manager
+                  on/after the due date based on this setting.
                 </p>
               </div>
 
@@ -252,8 +312,8 @@ export default function NewOffboardingPage() {
                   className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#3578E5] resize-y"
                 />
                 <p className="text-[11px] text-slate-500">
-                  You can paste a quick list now; later we&apos;ll tie this
-                  directly to assets.
+                  You can paste a quick list now; later we&apos;ll tie this directly
+                  to assets.
                 </p>
               </div>
 
@@ -279,8 +339,7 @@ export default function NewOffboardingPage() {
               )}
               {success && (
                 <p className="text-xs text-emerald-400 bg-emerald-950/30 border border-emerald-900 rounded-xl px-3 py-2">
-                  Offboarding event created. We&apos;ll keep an eye on those
-                  devices.
+                  Offboarding event created. We&apos;ll keep an eye on those devices.
                 </p>
               )}
 
